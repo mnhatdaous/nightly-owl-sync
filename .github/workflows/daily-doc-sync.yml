@@ -1,0 +1,38 @@
+name: daily-doc-sync
+
+on:
+  schedule:
+    - cron: "0 5 * * *" # Daily at 12:00 PM Vietnam time (UTC+7)
+  workflow_dispatch: {} # manual trigger
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build image
+        run: docker build -t optibot-job .
+      - name: Seed logs.json from gh-pages history
+        run: |
+          mkdir -p docs
+          git fetch origin gh-pages 2>/dev/null || true
+          git show origin/gh-pages:logs.json > docs/logs.json.tmp 2>/dev/null \
+            && mv docs/logs.json.tmp docs/logs.json \
+            || rm -f docs/logs.json.tmp
+      - name: Run sync job
+        run: |
+          mkdir -p logs
+          docker run \
+            -e OPENAI_API_KEY="${{ secrets.OPENAI_API_KEY }}" \
+            -v "$PWD/docs:/app/docs" \
+            optibot-job
+      - name: Publish log summary to GitHub Pages
+        if: always()
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: docs
+          keep_files: true
